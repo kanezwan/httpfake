@@ -17,7 +17,7 @@
 
 
 #define BUF_LEN         (2048)
-#define CHECK_PATH_LEN  (15)
+#define CHECK_PATH_LEN  (18)
 
 #ifndef ETHERTYPE_VLAN
 #define ETHERTYPE_VLAN 0x8100
@@ -148,8 +148,8 @@ void PacketSniffer::HandleFrame(char *pdata) {
 
   printf("IP: %x %s/%s plen:%d\n", iphead->saddr, host.host, host.path, host.plen);
 
-  /// 便于演示，仅拦截path>15的请求
-  if (host.plen >= CHECK_PATH_LEN) {
+  /// 便于演示，仅拦截path=18的请求
+  if (host.plen = CHECK_PATH_LEN) {
     // 伪造响应
     mFaker->sendHttpResponse((char *)iphead, g_Response);
   }
