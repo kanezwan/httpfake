@@ -10,17 +10,16 @@
  * 注：尊重数据安全，请勿用于非法之目的
  */
 int main(int argc, char **argv) {
-  if (argc < 4) {
-    printf("Usage:%s eth0 type ip\n", basename(argv[0]));
-    printf("       eth0 The nic will be collect\n");
-    printf("       type How to collect traffic；1.rawsocket 2.libpcap\n");
-
+  if (argc < 2) {
+    printf("Usage: %s eth0 type\n", basename(argv[0]));
+    printf("\t\teth0: The nic will be sniffed\n");
+    printf("\t\ttype: How to sample flow, 1.rawsocket 2.libpcap\n");
     return 1;
   }
 
   // 采集类
   PacketSniffer pSniffer;
   pSniffer.Start(argv[1], atoi(argv[2]));
-
+  
   return 0;
 }

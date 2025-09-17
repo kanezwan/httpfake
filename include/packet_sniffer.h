@@ -26,9 +26,10 @@ public:
 
 private:
   // 原始套接字采集
-  void RawSniffer(const char *eth);
+  int RawSniffer(const char *eth);
+
   // Pcap采集
-  void PcapSniffer(char *eth);
+  int PcapSniffer(char *eth);
 
 private:
   HttpParse *mParser;       // http解析类
