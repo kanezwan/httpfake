@@ -4,23 +4,22 @@ Httpfake is a program that demnostrate how to hijack http package and response a
 httpfake 演示http数据协议过程，涉及到数据包采集，tcp协议包构造等技术点。
 
 ## Install
-
-centos:
-
-    #安装libpcap-dev：
-    yum -y install libpcap-dev 
+```shell
+#安装依赖
+yum -y install libpcap-dev 
     
-    #编译
-    wget https://github.com/spkettas/httpfake/archive/master.zip
-    unzip master.zip
-    cd master
-    make
-  
+#编译
+wget https://github.com/spkettas/httpfake/archive/master.zip
+unzip master.zip
+cd master
+make
+``` 
     
 ## Usage(需要root权限启动）：
-
-    ./httpfake 网卡名 采集类型 拦截IP 
-    ./httpfake eth0 1 10.14.230.9
+```shell
+./httpfake 网卡名 采集类型
+./httpfake eth0 1
+```
 
 ## Example
 * 劫持前：
