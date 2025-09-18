@@ -17,7 +17,11 @@ make
     
 ## Usage(需要root权限启动）：
 ```shell
-./httpfake 网卡名 采集类型
+# 启动web服务
+go run test/web_server.go
+
+# 启动劫持服务
+# ./httpfake 网卡名 采集类型
 ./httpfake eth0 1
 ```
 
